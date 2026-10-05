@@ -75,6 +75,10 @@ dl { display: grid; grid-template-columns: auto 1fr; gap: .5em 1.4em; margin-top
 dt { color: var(--dim); font-size: .9rem; }
 dd { font-variant-numeric: tabular-nums; }
 
+article > ul:not(#guide-list), article > ol:not(.bars) { margin-top: .8em; padding-left: 1.5em; }
+li + li { margin-top: .3em; }
+.strip li + li, .bars li + li { margin-top: 0; }
+td { vertical-align: top; }
 table { width: 100%; border-collapse: collapse; margin-top: 1em; font-variant-numeric: tabular-nums; }
 th, td { text-align: left; padding: .4em .5em; border-bottom: 1px solid var(--line); font-weight: 400; }
 th { color: var(--dim); font-size: .85rem; }

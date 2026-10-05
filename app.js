@@ -75,8 +75,8 @@
               "A" + rx.toFixed(1) + " " + Rm + " 0 0 " + sw + " " + C + " " + (C - Rm) + "Z";
     var out = "M" + (C - O) + " " + C + "a" + O + " " + O + " 0 1 0 " + 2 * O + " 0a" + O + " " + O +
               " 0 1 0 " + (-2 * O) + " 0Z";
-    return '<image href="img/full-moon.jpg" width="1920" height="1920"/>' +
-      '<g clip-path="url(#disc)"><path d="' + out + lit + '" fill="#04060e" fill-opacity=".93" fill-rule="evenodd" ' +
+    return '<g clip-path="url(#disc)"><image href="img/full-moon.jpg" width="1920" height="1920"/>' +
+      '<path d="' + out + lit + '" fill="#04060e" fill-opacity=".93" fill-rule="evenodd" ' +
       'filter="url(#soft)"' + (w ? ' transform="translate(1920 0) scale(-1 1)"' : "") + "/></g>";
   }
   function moonSVG(e, px, extra) {
