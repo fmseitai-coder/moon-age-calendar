@@ -188,6 +188,25 @@
     $("lock-fig").innerHTML = out;
   }
 
+  /* ---------- ④ 3つの玉のたとえ ---------- */
+  function renderBalls(t) {               // t: 0〜100（時間の進み）
+    var d = 55 * t / 100, y = 120, xs = [130 - d, 270, 410 + d];
+    var arrows = [["弱", 40], ["中", 58], ["強", 78]];
+    var out = '<defs><marker id="ah-b" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto">' +
+      '<path d="M0 0L8 4L0 8Z" style="fill:var(--gold)"/></marker></defs>' +
+      '<circle cx="590" cy="' + y + '" r="34" style="fill:var(--moon)"/>' + txt(590, y + 58, "月") +
+      '<line x1="' + xs[0] + '" y1="' + y + '" x2="' + xs[2] + '" y2="' + y + '" style="stroke:var(--gold);stroke-width:' + (5 - 3 * t / 100).toFixed(1) + '"/>';
+    xs.forEach(function (x, i) {
+      var a = arrows[i];
+      out += '<line x1="' + x + '" y1="52" x2="' + (x + a[1] + 20) + '" y2="52" style="stroke:var(--gold);stroke-width:2" marker-end="url(#ah-b)"/>' +
+        txt(x - 8, 40, a[0], "end") +
+        '<circle cx="' + x + '" cy="' + y + '" r="20" style="fill:' + (i === 1 ? "var(--gold)" : "var(--sea)") + ';stroke:var(--bg);stroke-width:2"/>';
+    });
+    out += txt(xs[0], y + 48, "月から遠い側の海") + txt(xs[1], y + 48, "地球の中心") + txt(xs[2], y + 48, "月に近い側の海") +
+      txt(320, 192, "月が引っ張る強さ：近い玉 ＞ 真ん中 ＞ 遠い玉", "middle");
+    $("balls-fig").innerHTML = out;
+  }
+
   /* ---------- ③ 潮の仕組み ---------- */
   function tideH(th, thm, ths) {   // 角度はすべて度。月の潮＋太陽の潮の合成（最大 1+SUN_RATIO）
     return Math.cos(2 * (th - thm) * R) + SUN_RATIO * Math.cos(2 * (th - ths) * R);
@@ -364,6 +383,7 @@
     $("next").onclick = function () { view = view.m === 12 ? { y: view.y + 1, m: 1 } : { y: view.y, m: view.m + 1 }; renderCal(); };
     $("orbit-range").addEventListener("input", function () { orbitE = +this.value; drawOrbit(); });
     $("tide-range").addEventListener("input", function () { tideS = +this.value; drawTide(); });
+    $("balls-range").addEventListener("input", function () { renderBalls(+this.value); });
     $("tide-play").onclick = function () {
       playing = !playing;
       this.textContent = playing ? "停止" : "再生";
@@ -379,6 +399,7 @@
 
   var n0 = jst(Date.now());
   renderLock();
+  renderBalls(60);
   bind();
   select({ y: n0.y, m: n0.m, d: n0.d }, false);
 })();
