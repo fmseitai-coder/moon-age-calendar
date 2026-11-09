@@ -84,6 +84,20 @@
       moonInner(e) + "</svg>";
   }
 
+  /* ---------- 月の出・月の入り（選んだ場所、日本時間） ---------- */
+  var PLACES = [
+    { n: "東京", lat: 35.68, lon: 139.77 }, { n: "札幌", lat: 43.06, lon: 141.35 },
+    { n: "仙台", lat: 38.27, lon: 140.87 }, { n: "名古屋", lat: 35.18, lon: 136.91 },
+    { n: "大阪", lat: 34.69, lon: 135.50 }, { n: "福岡", lat: 33.59, lon: 130.40 },
+    { n: "那覇", lat: 26.21, lon: 127.68 }
+  ];
+  var placeI = 0;
+  function dayRS(s) {
+    var p = PLACES[placeI], t0 = Date.UTC(s.y, s.m - 1, s.d) - JST;
+    return A.moonDay(t0, t0 + 86400000, p.lat, p.lon);
+  }
+  function hmt(t) { if (t === null) return "—"; var j = jst(t); return j.h + ":" + pad(j.mi); }
+
   /* ---------- 今日の月 ---------- */
   function renderToday() {
     var i = cur, now = jst(Date.now()), isToday = same(sel, now);
@@ -91,6 +105,7 @@
     var nf = A.nextPhase(ref, 180), nn = A.nextPhase(ref, 0);
     var ang = A.angular(i.dist), diff = (i.dist - MEAN_DIST) / MEAN_DIST * 100;
     var wd = WD[new Date(Date.UTC(sel.y, sel.m - 1, sel.d)).getUTCDay()];
+    var rs = dayRS(sel), pn = PLACES[placeI].n;
 
     $("today").innerHTML =
       "<figure>" + moonSVG(i.e, 420, 'role="img" aria-label="' + phaseName(i.e) + '"') + "</figure>" +
@@ -103,6 +118,9 @@
           "<dt>潮回り</dt><dd>" + tideOf(i.age) + "</dd>" +
           "<dt>月までの距離</dt><dd>" + comma(i.dist) + " km（平均より " + (diff >= 0 ? "+" : "−") + Math.abs(diff).toFixed(1) + "%）</dd>" +
           "<dt>見かけの大きさ</dt><dd>" + ang.toFixed(1) + "′（" + (ang / 60).toFixed(2) + "°）</dd>" +
+          "<dt>月の出（" + pn + "）</dt><dd>" + hmt(rs.rise) + "</dd>" +
+          "<dt>月の南中</dt><dd>" + hmt(rs.transit) + "</dd>" +
+          "<dt>月の入り</dt><dd>" + hmt(rs.set) + "</dd>" +
           "<dt>次の満月</dt><dd>" + fmt(nf) + "（" + until(nf, ref) + "）</dd>" +
           "<dt>次の新月</dt><dd>" + fmt(nn) + "（" + until(nn, ref) + "）</dd>" +
         "</dl>" +
@@ -125,10 +143,11 @@
     var html = WD.map(function (w) { return "<span>" + w + "</span>"; }).join("");
     for (var b = 0; b < wd0; b++) html += "<span></span>";
     for (var d = 1; d <= days; d++) {
-      var s = { y: v.y, m: v.m, d: d }, i = info(s), t = tideOf(i.age);
+      var s = { y: v.y, m: v.m, d: d }, i = info(s), t = tideOf(i.age), rs = dayRS(s);
       var cls = (same(s, sel) ? " sel" : "") + (same(s, now) ? " today" : "") + (t === "大潮" ? " spring" : "");
       html += '<button data-d="' + d + '" class="' + cls.trim() + '" title="月齢' + i.age.toFixed(1) + "・" + t + '">' +
-        "<b>" + d + "</b>" + moonSVG(i.e, 38) + "<span>" + i.age.toFixed(1) + "</span><i>" + (ev[d] || "") + "</i></button>";
+        "<b>" + d + "</b>" + moonSVG(i.e, 38) + "<span>" + i.age.toFixed(1) + "</span><i>" + (ev[d] || "") + "</i>" +
+        "<em>出" + hmt(rs.rise) + " 入" + hmt(rs.set) + "</em></button>";
     }
     $("grid").innerHTML = html;
     $("month-title").textContent = v.y + "年" + v.m + "月";
@@ -384,6 +403,8 @@
     $("orbit-range").addEventListener("input", function () { orbitE = +this.value; drawOrbit(); });
     $("tide-range").addEventListener("input", function () { tideS = +this.value; drawTide(); });
     $("balls-range").addEventListener("input", function () { renderBalls(+this.value); });
+    $("place").innerHTML = PLACES.map(function (p, k) { return '<option value="' + k + '">' + p.n + "</option>"; }).join("");
+    $("place").addEventListener("change", function () { placeI = +this.value; renderToday(); renderCal(); });
     $("tide-play").onclick = function () {
       playing = !playing;
       this.textContent = playing ? "停止" : "再生";

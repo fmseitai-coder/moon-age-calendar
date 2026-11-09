@@ -37,7 +37,19 @@
     [1, 0, 1, 0, -2348, 6322],        [2, -2, 0, 0, 2236, -9884]
   ];
 
-  /* 時刻 t → 月の状態 { elong: 離角(度), dist: 距離(km) } */
+  // [D, M, M', F, 黄緯の係数(1e-6度)]
+  var TERMS_B = [
+    [0, 0, 0, 1, 5128122], [0, 0, 1, 1, 280602], [0, 0, 1, -1, 277693], [2, 0, 0, -1, 173237],
+    [2, 0, -1, 1, 55413], [2, 0, -1, -1, 46271], [2, 0, 0, 1, 32573], [0, 0, 2, 1, 17198],
+    [2, 0, 1, -1, 9266], [0, 0, 2, -1, 8822], [2, -1, 0, -1, 8216], [2, 0, -2, -1, 4324],
+    [2, 0, 1, 1, 4200], [2, 1, 0, -1, -3359], [2, -1, -1, 1, 2463], [2, -1, 0, 1, 2211],
+    [2, -1, -1, -1, 2065], [0, 1, -1, -1, -1870], [4, 0, -1, -1, 1828], [0, 1, 0, 1, -1794],
+    [0, 0, 0, 3, -1749], [0, 1, -1, 1, -1565], [1, 0, 0, 1, -1491], [0, 1, 1, 1, -1475],
+    [0, 1, 1, -1, -1410], [0, 1, 0, -1, -1344], [1, 0, 0, -1, -1335], [0, 0, 3, 1, 1107],
+    [4, 0, 0, -1, 1021], [4, 0, -1, 1, 833]
+  ];
+
+  /* 時刻 t → 月の状態 { elong: 離角(度), dist: 距離(km), lambda: 黄経(度), beta: 黄緯(度), T: ユリウス世紀 } */
   function moon(t) {
     var T = (t / DAY + 2440587.5 - 2451545) / 36525;
     var T2 = T * T;
@@ -61,12 +73,56 @@
 
     var lambda = norm(Lp + sl / 1e6);
 
+    var sb = 0;
+    for (var j = 0; j < TERMS_B.length; j++) {
+      var kb = TERMS_B[j], eb = Math.abs(kb[1]) === 1 ? E : Math.abs(kb[1]) === 2 ? E * E : 1;
+      sb += kb[4] * eb * sin(kb[0] * D + kb[1] * M + kb[2] * Mp + kb[3] * F);
+    }
+    sb += -2235 * sin(Lp) + 382 * sin(313.45 + 481266.484 * T) + 175 * sin(A1 - F) + 175 * sin(A1 + F) +
+      127 * sin(Lp - Mp) - 115 * sin(Lp + Mp);
+    var beta = sb / 1e6;
+
     var L0 = 280.46646 + 36000.76983 * T;
     var Ms = 357.52911 + 35999.05029 * T;
     var C = (1.914602 - 0.004817 * T) * sin(Ms) + 0.019993 * sin(2 * Ms) + 0.000289 * sin(3 * Ms);
     var sun = norm(L0 + C);
 
-    return { elong: norm(lambda - sun), dist: 385000.56 + sr / 1000 };
+    return { elong: norm(lambda - sun), dist: 385000.56 + sr / 1000, lambda: lambda, beta: beta, T: T };
+  }
+
+  /* 場所（緯度lat・東経lon）での、月の高さ（度）から、月の出入りの基準の高さを引いた値。
+     0を横切る時刻が、月の出・月の入り。基準は、視差と大気の屈折を含めた、上の縁が地平線に来る高さ */
+  function moonAlt(t, lat, lon, parts) {
+    var m = moon(t), T = m.T, eps = (23.439291 - 0.0130042 * T) * R2D;
+    var lam = m.lambda * R2D, bet = m.beta * R2D;
+    var ra = Math.atan2(Math.sin(lam) * Math.cos(eps) - Math.tan(bet) * Math.sin(eps), Math.cos(lam));
+    var dec = Math.asin(Math.sin(bet) * Math.cos(eps) + Math.cos(bet) * Math.sin(eps) * Math.sin(lam));
+    var gmst = norm(280.46061837 + 360.98564736629 * (t / DAY + 2440587.5 - 2451545));
+    var H = (gmst + lon) * R2D - ra, p = lat * R2D;
+    var alt = Math.asin(Math.sin(p) * Math.sin(dec) + Math.cos(p) * Math.cos(dec) * Math.cos(H)) / R2D;
+    var hz = Math.asin(6378.14 / m.dist) / R2D;                // 地平視差（度）
+    if (parts) return { H: ((H / R2D + 540) % 360) - 180, alt: alt };
+    return alt - (0.7275 * hz - 34 / 60);
+  }
+
+  /* [t0, t1) の間の、月の出・月の入り・南中の時刻（UTCミリ秒）。なければ null */
+  function moonDay(t0, t1, lat, lon) {
+    var step = 600000, res = { rise: null, set: null, transit: null };
+    var f = function (t) { return moonAlt(t, lat, lon); };
+    var g = function (t) { return moonAlt(t, lat, lon, true).H; };
+    var bis = function (fn, a, b) {
+      for (var i = 0; i < 24; i++) { var c = (a + b) / 2; if ((fn(a) < 0) === (fn(c) < 0)) a = c; else b = c; }
+      return (a + b) / 2;
+    };
+    var pf = f(t0), pg = g(t0);
+    for (var t = t0 + step; t <= t1; t += step) {
+      var cf = f(t), cg = g(t);
+      if (res.rise === null && pf < 0 && cf >= 0) res.rise = bis(f, t - step, t);
+      if (res.set === null && pf >= 0 && cf < 0) res.set = bis(f, t - step, t);
+      if (res.transit === null && pg < 0 && cg >= 0 && cg - pg < 180) res.transit = bis(g, t - step, t);
+      pf = cf; pg = cg;
+    }
+    return res;
   }
 
   /* 離角が target 度になる時刻を、初期値 t から求根（ニュートン法） */
@@ -119,6 +175,6 @@
 
   root.Astro = {
     SYN: SYN, moon: moon, age: age, illum: illum, angular: angular,
-    nextPhase: nextPhase, prevPhase: prevPhase, events: events
+    nextPhase: nextPhase, prevPhase: prevPhase, events: events, moonDay: moonDay
   };
 })(typeof window !== "undefined" ? window : globalThis);
