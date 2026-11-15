@@ -105,11 +105,25 @@
     return alt - (0.7275 * hz - 34 / 60);
   }
 
-  /* [t0, t1) の間の、月の出・月の入り・南中の時刻（UTCミリ秒）。なければ null */
-  function moonDay(t0, t1, lat, lon) {
-    var step = 600000, res = { rise: null, set: null, transit: null };
-    var f = function (t) { return moonAlt(t, lat, lon); };
-    var g = function (t) { return moonAlt(t, lat, lon, true).H; };
+  /* 場所での太陽の高さ（度）から、日の出入りの基準（上の縁＋大気の屈折で −0.833°）を引いた値 */
+  function sunAlt(t, lat, lon, parts) {
+    var T = (t / DAY + 2440587.5 - 2451545) / 36525, eps = (23.439291 - 0.0130042 * T) * R2D;
+    var Ms = 357.52911 + 35999.05029 * T;
+    var C = (1.914602 - 0.004817 * T) * sin(Ms) + 0.019993 * sin(2 * Ms) + 0.000289 * sin(3 * Ms);
+    var lam = norm(280.46646 + 36000.76983 * T + C) * R2D;
+    var ra = Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam));
+    var dec = Math.asin(Math.sin(eps) * Math.sin(lam));
+    var gmst = norm(280.46061837 + 360.98564736629 * (t / DAY + 2440587.5 - 2451545));
+    var H = (gmst + lon) * R2D - ra, p = lat * R2D;
+    var alt = Math.asin(Math.sin(p) * Math.sin(dec) + Math.cos(p) * Math.cos(dec) * Math.cos(H)) / R2D;
+    if (parts) return { H: ((H / R2D + 540) % 360) - 180, alt: alt };
+    return alt + 0.833;
+  }
+
+  /* 高さ関数 f（0を横切る時刻が出入り）と、時角関数 g（0を横切る時刻が南中）で、
+     [t0, t1) の出・入り・南中（UTCミリ秒、なければ null）と、t0 に出ているか（up）を求める */
+  function scan(f, g, t0, t1) {
+    var step = 600000, res = { rise: null, set: null, transit: null, up: f(t0) >= 0 };
     var bis = function (fn, a, b) {
       for (var i = 0; i < 24; i++) { var c = (a + b) / 2; if ((fn(a) < 0) === (fn(c) < 0)) a = c; else b = c; }
       return (a + b) / 2;
@@ -123,6 +137,15 @@
       pf = cf; pg = cg;
     }
     return res;
+  }
+
+  function moonDay(t0, t1, lat, lon) {
+    return scan(function (t) { return moonAlt(t, lat, lon); },
+                function (t) { return moonAlt(t, lat, lon, true).H; }, t0, t1);
+  }
+  function sunDay(t0, t1, lat, lon) {
+    return scan(function (t) { return sunAlt(t, lat, lon); },
+                function (t) { return sunAlt(t, lat, lon, true).H; }, t0, t1);
   }
 
   /* 離角が target 度になる時刻を、初期値 t から求根（ニュートン法） */
@@ -175,6 +198,6 @@
 
   root.Astro = {
     SYN: SYN, moon: moon, age: age, illum: illum, angular: angular,
-    nextPhase: nextPhase, prevPhase: prevPhase, events: events, moonDay: moonDay
+    nextPhase: nextPhase, prevPhase: prevPhase, events: events, moonDay: moonDay, sunDay: sunDay
   };
 })(typeof window !== "undefined" ? window : globalThis);

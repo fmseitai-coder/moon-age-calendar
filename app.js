@@ -92,9 +92,14 @@
     { n: "那覇", lat: 26.21, lon: 127.68 }
   ];
   var placeI = 0;
+  var rsCache = {};
   function dayRS(s) {
+    var key = placeI + "/" + s.y + "/" + s.m + "/" + s.d;
+    if (rsCache[key]) return rsCache[key];
     var p = PLACES[placeI], t0 = Date.UTC(s.y, s.m - 1, s.d) - JST;
-    return A.moonDay(t0, t0 + 86400000, p.lat, p.lon);
+    var rs = A.moonDay(t0, t0 + 86400000, p.lat, p.lon);
+    rs.sun = A.sunDay(t0, t0 + 86400000, p.lat, p.lon);
+    return (rsCache[key] = rs);
   }
   function hmt(t) { if (t === null) return "—"; var j = jst(t); return j.h + ":" + pad(j.mi); }
 
@@ -151,6 +156,63 @@
     }
     $("grid").innerHTML = html;
     $("month-title").textContent = v.y + "年" + v.m + "月";
+  }
+
+  /* ---------- ③ 月と太陽の出ている時間（1か月ぶんの帯） ---------- */
+  function upSegs(r, t0) {         // 1日の中で出ている区間 [[開始分, 終了分], …]
+    var ev = [];
+    if (r.rise !== null) ev.push([(r.rise - t0) / 60000, 1]);
+    if (r.set !== null) ev.push([(r.set - t0) / 60000, 0]);
+    ev.sort(function (a, b) { return a[0] - b[0]; });
+    var segs = [], up = r.up, from = 0;
+    ev.forEach(function (e) {
+      if (e[1] === 1) { from = e[0]; up = true; }
+      else { if (up) segs.push([from, e[0]]); up = false; }
+    });
+    if (up) segs.push([from, 1440]);
+    return segs;
+  }
+  function renderRS() {
+    var v = view, days = new Date(v.y, v.m, 0).getDate(), now = jst(Date.now());
+    var first = Date.UTC(v.y, v.m - 1, 1) - JST, end = Date.UTC(v.y, v.m, 1) - JST;
+    var ev = {};
+    A.events(first, end).forEach(function (e) { ev[jst(e.t).d] = e.name; });
+    var X0 = 44, W = 540, RH = 15, Y0 = 22, H = Y0 + days * RH + 6;
+    var x = function (min) { return (X0 + min / 1440 * W).toFixed(1); };
+    var bar = function (segs, y, fill) {
+      return segs.map(function (g) {
+        return '<rect x="' + x(g[0]) + '" y="' + y + '" width="' + ((g[1] - g[0]) / 1440 * W).toFixed(1) +
+          '" height="5.5" rx="1.5" style="fill:' + fill + '"/>';
+      }).join("");
+    };
+    var svg = '<svg viewBox="0 0 640 ' + H + '" role="img" aria-label="' + v.y + "年" + v.m + '月の、太陽と月が出ている時間の帯グラフ">';
+    for (var h = 0; h <= 24; h += 6) {
+      svg += '<line x1="' + x(h * 60) + '" y1="' + (Y0 - 4) + '" x2="' + x(h * 60) + '" y2="' + (H - 4) + '" style="stroke:var(--line)"/>' +
+        txt(x(h * 60), 14, h + "時");
+    }
+    for (var d = 1; d <= days; d++) {
+      var s = { y: v.y, m: v.m, d: d }, rs = dayRS(s), t0 = Date.UTC(v.y, v.m - 1, d) - JST, y = Y0 + (d - 1) * RH;
+      var on = same(s, sel);
+      svg += '<g data-d="' + d + '" style="cursor:pointer"><rect x="0" y="' + y + '" width="640" height="' + RH + '" style="fill:' +
+        (on ? "rgba(224,192,128,.12)" : "transparent") + '"/>' +
+        '<text x="' + (X0 - 8) + '" y="' + (y + 11) + '" text-anchor="end" style="font-size:11px;fill:' +
+        (same(s, now) ? "var(--gold)" : "var(--dim)") + '">' + d + "</text>" +
+        bar(upSegs(rs.sun, t0), y + 1.5, "var(--gold)") + bar(upSegs(rs, t0), y + 7.5, "var(--moon)") +
+        (ev[d] ? '<text x="' + (X0 + W + 8) + '" y="' + (y + 11) + '" style="font-size:11px;fill:var(--dim)">' + ev[d] + "</text>" : "") +
+        "</g>";
+    }
+    $("rs-fig").innerHTML = svg + "</svg>";
+
+    var r = dayRS(sel), pn = PLACES[placeI].n;
+    var gap = "";
+    if (r.rise !== null && r.sun.rise !== null) {
+      var m = Math.round((r.rise - r.sun.rise) / 60000);
+      m = ((m % 1440) + 1440 + 720) % 1440 - 720;                // −12〜+12時間に丸める
+      gap = "　月の出は日の出の" + (Math.abs(m) < 5 ? "ほぼ同時" : Math.floor(Math.abs(m) / 60) + "時間" + pad(Math.abs(m) % 60) + "分" + (m > 0 ? "後" : "前")) + "。";
+    }
+    $("rs-cap").innerHTML = "<strong>" + sel.m + "月" + sel.d + "日（" + pn + "）</strong>　" +
+      "日の出 " + hmt(r.sun.rise) + "・日の入り " + hmt(r.sun.set) + "　月の出 " + hmt(r.rise) + "・月の入り " + hmt(r.set) +
+      gap + "<br>金：太陽が出ている時間　白：月が出ている時間（日本時間）。日付の行をクリックすると、その日を選べます。";
   }
 
   /* ---------- 図解用の小道具 ---------- */
@@ -362,7 +424,7 @@
   /* ---------- 全体の描き直し ---------- */
   function renderAll() {
     cur = info(sel);
-    renderToday(); renderCal(); renderOrbit(); drawTide(); renderSpring();
+    renderToday(); renderCal(); renderRS(); renderOrbit(); drawTide(); renderSpring();
     renderDist(); renderFull(); renderGuide();
   }
 
@@ -398,13 +460,17 @@
       var b = ev.target.closest("button[data-d]");
       if (b) select({ y: view.y, m: view.m, d: +b.getAttribute("data-d") }, true);
     });
-    $("prev").onclick = function () { view = view.m === 1 ? { y: view.y - 1, m: 12 } : { y: view.y, m: view.m - 1 }; renderCal(); };
-    $("next").onclick = function () { view = view.m === 12 ? { y: view.y + 1, m: 1 } : { y: view.y, m: view.m + 1 }; renderCal(); };
+    $("prev").onclick = function () { view = view.m === 1 ? { y: view.y - 1, m: 12 } : { y: view.y, m: view.m - 1 }; renderCal(); renderRS(); };
+    $("next").onclick = function () { view = view.m === 12 ? { y: view.y + 1, m: 1 } : { y: view.y, m: view.m + 1 }; renderCal(); renderRS(); };
     $("orbit-range").addEventListener("input", function () { orbitE = +this.value; drawOrbit(); });
     $("tide-range").addEventListener("input", function () { tideS = +this.value; drawTide(); });
     $("balls-range").addEventListener("input", function () { renderBalls(+this.value); });
     $("place").innerHTML = PLACES.map(function (p, k) { return '<option value="' + k + '">' + p.n + "</option>"; }).join("");
-    $("place").addEventListener("change", function () { placeI = +this.value; renderToday(); renderCal(); });
+    $("place").addEventListener("change", function () { placeI = +this.value; renderToday(); renderCal(); renderRS(); });
+    $("rs-fig").addEventListener("click", function (ev) {
+      var g = ev.target.closest("g[data-d]");
+      if (g) select({ y: view.y, m: view.m, d: +g.getAttribute("data-d") }, false);
+    });
     $("tide-play").onclick = function () {
       playing = !playing;
       this.textContent = playing ? "停止" : "再生";
